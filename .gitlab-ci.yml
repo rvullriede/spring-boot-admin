@@ -1,0 +1,25 @@
+include:
+  - project: 'software/passive-services/gitflow-ci'
+    ref: 'master'
+    file: '/gitlab/pipeline/java-17-with-gitflow.yml'
+
+variables:
+  SSH_DEPLOY_KEY: ${NEW_DEPLOY_SSH_KEY}
+  SSH_DEPLOY_USER: ${NEW_DEPLOY_SSH_USER}
+  #RELEASE_PAGES_PARENT_PAGE_ID: 331680743
+  #RELEASE_PAGES_CONFLUENCE_SPACE: 'DEVS'
+  JIRA_KEY: 'CAMP'
+  GF_CONFLUENCE_RELEASE_PARENT_PAGE_ID: 1772027980
+
+release-pages:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+
+# Force a fresh git clone for the sonar job. The shared sonar template's
+# before_script does `rm -rf .git`, which hits "Permission denied" when a
+# previous job (running in a different container/uid) left files inside
+# .git/. A fresh clone gives the scanner-cli container ownership of every
+# file from the start.
+sonarqube:
+  variables:
+    GIT_STRATEGY: clone
