@@ -585,10 +585,15 @@
     </profiles>
 
     <distributionManagement>
+        <repository>
+            <id>releases</id>
+            <name>Nexus Releases Repo</name>
+            <url>${glasfaser.releases.repo.url}</url>
+        </repository>
         <snapshotRepository>
-            <id>github</id>
-            <name>GitHub Packages</name>
-            <url>https://maven.pkg.github.com/codecentric/spring-boot-admin</url>
+            <id>snapshots</id>
+            <name>Nexus Snapshot Repo</name>
+            <url>${glasfaser.snapshots.repo.url}</url>
         </snapshotRepository>
     </distributionManagement>
 </project>
