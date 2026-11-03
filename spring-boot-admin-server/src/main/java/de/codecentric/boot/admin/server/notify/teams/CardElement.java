@@ -22,7 +22,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * An element of an {@link AdaptiveCard} body, see
  * <a href="https://adaptivecards.microsoft.com/?topic=Element">Element</a>.
  */
-public sealed interface CardElement permits TextBlock, FactSet, Container, ColumnSet, Image, ActionSet, Table {
+public sealed interface CardElement
+		permits TextBlock, FactSet, Container, ColumnSet, Image, ActionSet, Table, RawElement {
 
 	/**
 	 * @return the Adaptive Card element type
