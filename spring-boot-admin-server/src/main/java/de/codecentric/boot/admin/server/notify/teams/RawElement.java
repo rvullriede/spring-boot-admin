@@ -29,11 +29,14 @@ import com.fasterxml.jackson.annotation.JsonValue;
  *
  * @param json the properties of the element, including its {@code type}
  * @param minVersion the lowest card schema version supporting the element
- * @throws IllegalArgumentException if {@code json} has no non-blank string {@code type},
- * or {@code minVersion} is not of the form {@code <major>.<minor>}
  */
 public record RawElement(@JsonValue Map<String, Object> json, String minVersion) implements CardElement {
 
+	/**
+	 * Creates the element.
+	 * @throws IllegalArgumentException if {@code json} has no non-blank string
+	 * {@code type}, or {@code minVersion} is not of the form {@code <major>.<minor>}
+	 */
 	public RawElement {
 		if (!(json.get("type") instanceof String type) || type.isBlank()) {
 			throw new IllegalArgumentException("Raw element needs a non-blank string 'type', was " + json.get("type"));
