@@ -16,7 +16,9 @@
 
 package de.codecentric.boot.admin.server.notify;
 
+import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import org.skyscreamer.jsonassert.JSONAssert;
 import org.skyscreamer.jsonassert.JSONCompareMode;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.MediaType;
+import org.springframework.util.StreamUtils;
 import org.springframework.web.client.RestTemplate;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -33,6 +36,7 @@ import tools.jackson.databind.json.JsonMapper;
 import de.codecentric.boot.admin.server.domain.entities.Instance;
 import de.codecentric.boot.admin.server.domain.entities.InstanceRepository;
 import de.codecentric.boot.admin.server.domain.events.InstanceDeregisteredEvent;
+import de.codecentric.boot.admin.server.domain.events.InstanceEvent;
 import de.codecentric.boot.admin.server.domain.events.InstanceRegisteredEvent;
 import de.codecentric.boot.admin.server.domain.events.InstanceStatusChangedEvent;
 import de.codecentric.boot.admin.server.domain.values.InstanceId;
@@ -81,51 +85,33 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
-	void test_onClientApplicationDeRegisteredEvent_resolve() {
-		InstanceDeregisteredEvent event = new InstanceDeregisteredEvent(instance.getId(), 1L);
-
-		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
-
-		ArgumentCaptor<HttpEntity<Message>> entity = ArgumentCaptor.forClass(HttpEntity.class);
-		verify(mockRestTemplate).postForEntity(eq(URI.create("https://example.com")), entity.capture(), eq(Void.class));
-
-		assertThat(entity.getValue().getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
-		assertThat(entity.getValue().getBody()).isNotNull();
-		assertMessage(entity.getValue().getBody(), notifier.getDeregisteredTitle(),
-				"Test App with id TestAppId has de-registered from Spring Boot Admin", "Accent");
+	void test_onClientApplicationDeRegisteredEvent_resolve() throws Exception {
+		assertPostedJson(new InstanceDeregisteredEvent(instance.getId(), 1L), instance, "ms-teams-deregistered.json");
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
-	void test_onApplicationRegisteredEvent_resolve() {
-		InstanceRegisteredEvent event = new InstanceRegisteredEvent(instance.getId(), 1L, instance.getRegistration());
-
-		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
-
-		ArgumentCaptor<HttpEntity<Message>> entity = ArgumentCaptor.forClass(HttpEntity.class);
-		verify(mockRestTemplate).postForEntity(eq(URI.create("https://example.com")), entity.capture(), eq(Void.class));
-
-		assertThat(entity.getValue().getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
-		assertThat(entity.getValue().getBody()).isNotNull();
-		assertMessage(entity.getValue().getBody(), notifier.getRegisteredTitle(),
-				"Test App with id TestAppId has registered with Spring Boot Admin", "Accent");
+	void test_onApplicationRegisteredEvent_resolve() throws Exception {
+		assertPostedJson(new InstanceRegisteredEvent(instance.getId(), 1L, instance.getRegistration()), instance,
+				"ms-teams-registered.json");
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
-	void test_onApplicationStatusChangedEvent_resolve() {
-		InstanceStatusChangedEvent event = new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofUp());
+	void test_onApplicationStatusChangedEvent_resolve() throws Exception {
+		assertPostedJson(new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofUp()), instance,
+				"ms-teams-status-changed.json");
+	}
 
-		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
+	@Test
+	void test_onApplicationStatusChangedEvent_withSource_resolve() throws Exception {
+		Instance instanceWithSource = Instance.create(InstanceId.of(APP_ID))
+			.register(Registration.create(APP_NAME, HEALTH_URL)
+				.managementUrl(MANAGEMENT_URL)
+				.serviceUrl(SERVICE_URL)
+				.source("http-api")
+				.build());
 
-		ArgumentCaptor<HttpEntity<Message>> entity = ArgumentCaptor.forClass(HttpEntity.class);
-		verify(mockRestTemplate).postForEntity(eq(URI.create("https://example.com")), entity.capture(), eq(Void.class));
-
-		assertThat(entity.getValue().getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
-		assertThat(entity.getValue().getBody()).isNotNull();
-		assertMessage(entity.getValue().getBody(), notifier.getStatusChangedTitle(),
-				"Test App with id TestAppId changed status from UNKNOWN to UP", "Good");
+		assertPostedJson(new InstanceStatusChangedEvent(instanceWithSource.getId(), 1L, StatusInfo.ofDown()),
+				instanceWithSource, "ms-teams-status-changed-with-source.json");
 	}
 
 	@Test
@@ -274,6 +260,22 @@ class MicrosoftTeamsNotifierTest {
 				""";
 
 		JSONAssert.assertEquals(expectedJson, actual, JSONCompareMode.NON_EXTENSIBLE);
+	}
+
+	@SuppressWarnings("unchecked")
+	private void assertPostedJson(InstanceEvent event, Instance instance, String fixture) throws Exception {
+		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
+
+		ArgumentCaptor<HttpEntity<Object>> entity = ArgumentCaptor.forClass(HttpEntity.class);
+		verify(mockRestTemplate).postForEntity(eq(URI.create("https://example.com")), entity.capture(), eq(Void.class));
+		assertThat(entity.getValue().getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
+
+		String actual = JsonMapper.builder().build().writeValueAsString(entity.getValue().getBody());
+		JSONAssert.assertEquals(readFixture(fixture), actual, JSONCompareMode.STRICT);
+	}
+
+	private String readFixture(String name) throws IOException {
+		return StreamUtils.copyToString(getClass().getResourceAsStream(name), StandardCharsets.UTF_8);
 	}
 
 	private String getActivitySubtitleFromMessage(Message message) {

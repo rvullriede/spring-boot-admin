@@ -1,0 +1,54 @@
+{
+	"attachments": [
+		{
+			"content": {
+				"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+				"body": [
+					{
+						"color": "Accent",
+						"size": "Large",
+						"text": "Deregistered",
+						"type": "TextBlock",
+						"weight": "Bolder"
+					},
+					{
+						"size": "Medium",
+						"text": "Test App",
+						"type": "TextBlock",
+						"weight": "Bolder"
+					},
+					{
+						"text": "Test App with id TestAppId has de-registered from Spring Boot Admin",
+						"type": "TextBlock",
+						"wrap": true
+					},
+					{
+						"facts": [
+							{
+								"title": "Status",
+								"value": "UNKNOWN"
+							},
+							{
+								"title": "Service URL",
+								"value": "https://service"
+							},
+							{
+								"title": "Health URL",
+								"value": "https://health"
+							},
+							{
+								"title": "Management URL",
+								"value": "https://management"
+							}
+						],
+						"type": "FactSet"
+					}
+				],
+				"type": "AdaptiveCard",
+				"version": "1.2"
+			},
+			"contentType": "application/vnd.microsoft.card.adaptive"
+		}
+	],
+	"type": "message"
+}
