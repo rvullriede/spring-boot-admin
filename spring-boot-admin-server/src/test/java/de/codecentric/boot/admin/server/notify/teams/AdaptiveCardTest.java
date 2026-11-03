@@ -44,6 +44,27 @@ class AdaptiveCardTest {
 	}
 
 	@Test
+	void copyFromComponentsEqualsOriginal() {
+		AdaptiveCard card = AdaptiveCard.of(TextBlock.of("t"));
+		AdaptiveCard copy = new AdaptiveCard(card.body(), card.actions(), card.msteams(), card.explicitVersion());
+		assertThat(copy).isEqualTo(card);
+	}
+
+	@Test
+	void copyFromComponentsKeepsComputingVersion() {
+		AdaptiveCard card = AdaptiveCard.of(TextBlock.of("t"));
+		AdaptiveCard copy = new AdaptiveCard(card.body(), card.actions(), card.msteams(), card.explicitVersion());
+		assertThat(copy.withBody(Table.builder().build()).version()).isEqualTo("1.5");
+	}
+
+	@Test
+	void serializesExplicitVersionAsVersion() {
+		TeamsJson.assertJson(AdaptiveCard.of(TextBlock.of("t")).withVersion("1.4"),
+				"{\"$schema\":\"http://adaptivecards.io/schemas/adaptive-card.json\",\"type\":\"AdaptiveCard\","
+						+ "\"version\":\"1.4\",\"body\":[{\"type\":\"TextBlock\",\"text\":\"t\"}]}");
+	}
+
+	@Test
 	void rejectsMalformedVersion() {
 		assertThatIllegalArgumentException().isThrownBy(() -> AdaptiveCard.of().withVersion("1.x"));
 	}

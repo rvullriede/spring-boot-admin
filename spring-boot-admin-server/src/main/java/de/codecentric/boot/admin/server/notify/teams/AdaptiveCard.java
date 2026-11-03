@@ -20,34 +20,36 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.jspecify.annotations.Nullable;
 
 /**
  * An <a href="https://adaptivecards.microsoft.com/?topic=AdaptiveCard">AdaptiveCard</a>.
- * Unless set explicitly, {@link #version()} is the highest minimum version of the card's
- * elements and actions, at least 1.2. It is the value serialized as {@code version}.
+ * Unless {@code explicitVersion} is set, {@link #version()} is the highest minimum
+ * version of the card's elements and actions, at least 1.2. It is the value serialized as
+ * {@code version}.
  *
  * @param body the card elements
  * @param actions the card actions
  * @param msteams the Microsoft Teams specific properties
- * @param version the explicit schema version, or {@code null} to compute it
+ * @param explicitVersion the explicit schema version, or {@code null} to compute it
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AdaptiveCard(List<CardElement> body, @JsonInclude(JsonInclude.Include.NON_EMPTY) List<CardAction> actions,
-		@Nullable MsTeams msteams, @Nullable String version) {
+		@Nullable MsTeams msteams, @JsonIgnore @Nullable String explicitVersion) {
 
 	/**
 	 * Creates a card with defensive copies of the given lists.
-	 * @throws IllegalArgumentException if {@code version} is not of the form
+	 * @throws IllegalArgumentException if {@code explicitVersion} is not of the form
 	 * {@code <major>.<minor>}
 	 */
 	public AdaptiveCard {
 		body = List.copyOf(body);
 		actions = List.copyOf(actions);
-		if (version != null) {
-			CardVersions.requireValid(version);
+		if (explicitVersion != null) {
+			CardVersions.requireValid(explicitVersion);
 		}
 	}
 
@@ -64,7 +66,7 @@ public record AdaptiveCard(List<CardElement> body, @JsonInclude(JsonInclude.Incl
 	public AdaptiveCard withBody(CardElement... elements) {
 		List<CardElement> merged = new ArrayList<>(this.body);
 		merged.addAll(List.of(elements));
-		return new AdaptiveCard(merged, this.actions, this.msteams, this.version);
+		return new AdaptiveCard(merged, this.actions, this.msteams, this.explicitVersion);
 	}
 
 	/**
@@ -73,14 +75,14 @@ public record AdaptiveCard(List<CardElement> body, @JsonInclude(JsonInclude.Incl
 	public AdaptiveCard withActions(CardAction... additional) {
 		List<CardAction> merged = new ArrayList<>(this.actions);
 		merged.addAll(List.of(additional));
-		return new AdaptiveCard(this.body, merged, this.msteams, this.version);
+		return new AdaptiveCard(this.body, merged, this.msteams, this.explicitVersion);
 	}
 
 	/**
 	 * Returns a new card with the Teams properties replaced.
 	 */
 	public AdaptiveCard withMsTeams(MsTeams msTeams) {
-		return new AdaptiveCard(this.body, this.actions, msTeams, this.version);
+		return new AdaptiveCard(this.body, this.actions, msTeams, this.explicitVersion);
 	}
 
 	/**
@@ -102,10 +104,13 @@ public record AdaptiveCard(List<CardElement> body, @JsonInclude(JsonInclude.Incl
 		return "AdaptiveCard";
 	}
 
-	@Override
+	/**
+	 * @return the explicit version if set, otherwise the computed one
+	 */
+	@JsonProperty("version")
 	public String version() {
-		if (this.version != null) {
-			return this.version;
+		if (this.explicitVersion != null) {
+			return this.explicitVersion;
 		}
 		return CardVersions.max(Stream.concat(Stream.of(CardVersions.V1_2), Stream.concat(
 				this.body.stream().map(CardElement::minVersion), this.actions.stream().map(CardAction::minVersion))));
