@@ -33,6 +33,13 @@ The expression-based properties are parsed as SpEL template expressions (`#{ ...
 Register a `MicrosoftTeamsCardCustomizer` bean to change the card before it is posted. Cards are immutable, so return the changed copy. This example appends a table:
 
 ```java
+import de.codecentric.boot.admin.server.notify.MicrosoftTeamsCardCustomizer;
+import de.codecentric.boot.admin.server.notify.teams.Table;
+import de.codecentric.boot.admin.server.notify.teams.TableCell;
+import de.codecentric.boot.admin.server.notify.teams.TextBlock;
+import de.codecentric.boot.admin.server.notify.teams.Width;
+import org.springframework.context.annotation.Bean;
+
 @Bean
 public MicrosoftTeamsCardCustomizer issueTableCustomizer() {
 	return (card, event, instance) -> card.withBody(Table.builder()
@@ -46,7 +53,9 @@ public MicrosoftTeamsCardCustomizer issueTableCustomizer() {
 }
 ```
 
-Customizers run in `@Order` and only on the three default cards (registered, deregistered, status changed). A customizer that throws or returns `null` is skipped with a warning, and the alert is still posted. A subclass that sends its own cards builds them with the types in `de.codecentric.boot.admin.server.notify.teams` and posts them with `postMessage`.
+Customizers run in `@Order` order on the cards `createCard` returns: the three default cards (registered, deregistered, status changed), plus any card a subclass adds. A customizer that throws or returns `null` is skipped with a warning, and the card from before it is passed on to the next customizer.
+
+A user-defined `MicrosoftTeamsNotifier` bean must call `setCardCustomizers` itself. A subclass that sends its own cards builds them with the types in `de.codecentric.boot.admin.server.notify.teams` and posts them with `postMessage`.
 
 ### Card version
 
