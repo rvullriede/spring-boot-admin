@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2023 the original author or authors.
+ * Copyright 2014-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import de.codecentric.boot.admin.server.notify.teams.AdaptiveCard;
  * {@link MicrosoftTeamsNotifier} posts.
  * <p>
  * Customizers run only on the three default cards (registered, deregistered and status
- * changed), in the order of the registered beans. A customizer that throws or returns
- * {@code null} is skipped and the card of the previous customizer is posted.
+ * changed), in {@code @Order} order. A customizer that throws or returns {@code null} is
+ * skipped and the card of the previous customizer is posted.
  */
 @FunctionalInterface
 public interface MicrosoftTeamsCardCustomizer {
