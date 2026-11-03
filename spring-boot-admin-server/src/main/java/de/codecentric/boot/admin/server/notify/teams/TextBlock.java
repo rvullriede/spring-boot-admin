@@ -33,6 +33,9 @@ import org.jspecify.annotations.Nullable;
 public record TextBlock(String text, @Nullable TextSize size, @Nullable TextWeight weight, @Nullable String color,
 		@Nullable Boolean wrap, @Nullable HorizontalAlignment horizontalAlignment) implements CardElement {
 
+	/**
+	 * Creates a text block with the given text and no other properties set.
+	 */
 	public static TextBlock of(String text) {
 		return new TextBlock(text, null, null, null, null, null);
 	}

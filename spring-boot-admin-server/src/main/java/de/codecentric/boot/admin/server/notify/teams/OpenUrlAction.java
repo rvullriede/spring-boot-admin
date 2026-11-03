@@ -29,6 +29,9 @@ import org.jspecify.annotations.Nullable;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record OpenUrlAction(@Nullable String title, String url) implements CardAction {
 
+	/**
+	 * Creates an action with the given title that opens the given URL.
+	 */
 	public static OpenUrlAction of(String title, String url) {
 		return new OpenUrlAction(title, url);
 	}

@@ -28,6 +28,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record Fact(String title, String value) {
 
+	/**
+	 * Creates a fact with the given title and value.
+	 */
 	public static Fact of(String title, String value) {
 		return new Fact(title, value);
 	}

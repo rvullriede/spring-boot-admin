@@ -26,8 +26,14 @@ import com.fasterxml.jackson.annotation.JsonValue;
  */
 public final class Width {
 
+	/**
+	 * Makes the column as wide as its content.
+	 */
 	public static final Width AUTO = new Width("auto");
 
+	/**
+	 * Makes the column take the remaining width.
+	 */
 	public static final Width STRETCH = new Width("stretch");
 
 	private final Object value;

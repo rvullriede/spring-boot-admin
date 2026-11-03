@@ -32,6 +32,9 @@ public record FactSet(List<Fact> facts) implements CardElement {
 		facts = List.copyOf(facts);
 	}
 
+	/**
+	 * Creates a fact set holding the given facts.
+	 */
 	public static FactSet of(Fact... facts) {
 		return new FactSet(List.of(facts));
 	}
