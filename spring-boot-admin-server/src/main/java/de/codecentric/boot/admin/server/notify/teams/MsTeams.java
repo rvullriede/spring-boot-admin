@@ -38,10 +38,16 @@ public record MsTeams(@Nullable String width, @JsonInclude(JsonInclude.Include.N
 		entities = List.copyOf(entities);
 	}
 
+	/**
+	 * Creates properties that make the card use the full message width.
+	 */
 	public static MsTeams fullWidth() {
 		return new MsTeams("Full", List.of());
 	}
 
+	/**
+	 * Returns new properties with the mentions appended.
+	 */
 	public MsTeams withMentions(Mention... mentions) {
 		List<Mention> merged = new ArrayList<>(this.entities);
 		merged.addAll(List.of(mentions));

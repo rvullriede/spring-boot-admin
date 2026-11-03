@@ -35,6 +35,9 @@ public record TeamsMessage(List<Attachment> attachments) {
 		attachments = List.copyOf(attachments);
 	}
 
+	/**
+	 * Creates a message carrying the card as its only attachment.
+	 */
 	public static TeamsMessage of(AdaptiveCard card) {
 		return new TeamsMessage(List.of(new Attachment(card)));
 	}

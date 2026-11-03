@@ -26,8 +26,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * An <a href="https://adaptivecards.microsoft.com/?topic=AdaptiveCard">AdaptiveCard</a>.
- * Unless a version is set explicitly, {@link #version()} is the lowest version that
- * supports every element and action of the card.
+ * Unless set explicitly, {@link #version()} is the highest minimum version of the card's
+ * elements and actions, at least 1.2. It is the value serialized as {@code version}.
  *
  * @param body the card elements
  * @param actions the card actions
@@ -38,6 +38,11 @@ import org.jspecify.annotations.Nullable;
 public record AdaptiveCard(List<CardElement> body, @JsonInclude(JsonInclude.Include.NON_EMPTY) List<CardAction> actions,
 		@Nullable MsTeams msteams, @Nullable String version) {
 
+	/**
+	 * Creates a card with defensive copies of the given lists.
+	 * @throws IllegalArgumentException if {@code version} is not of the form
+	 * {@code <major>.<minor>}
+	 */
 	public AdaptiveCard {
 		body = List.copyOf(body);
 		actions = List.copyOf(actions);
@@ -46,26 +51,43 @@ public record AdaptiveCard(List<CardElement> body, @JsonInclude(JsonInclude.Incl
 		}
 	}
 
+	/**
+	 * Creates a card with the given body and no actions.
+	 */
 	public static AdaptiveCard of(CardElement... body) {
 		return new AdaptiveCard(List.of(body), List.of(), null, null);
 	}
 
+	/**
+	 * Returns a new card with the elements appended to the body.
+	 */
 	public AdaptiveCard withBody(CardElement... elements) {
 		List<CardElement> merged = new ArrayList<>(this.body);
 		merged.addAll(List.of(elements));
 		return new AdaptiveCard(merged, this.actions, this.msteams, this.version);
 	}
 
+	/**
+	 * Returns a new card with the actions appended.
+	 */
 	public AdaptiveCard withActions(CardAction... additional) {
 		List<CardAction> merged = new ArrayList<>(this.actions);
 		merged.addAll(List.of(additional));
 		return new AdaptiveCard(this.body, merged, this.msteams, this.version);
 	}
 
+	/**
+	 * Returns a new card with the Teams properties replaced.
+	 */
 	public AdaptiveCard withMsTeams(MsTeams msTeams) {
 		return new AdaptiveCard(this.body, this.actions, msTeams, this.version);
 	}
 
+	/**
+	 * Returns a new card with the version set explicitly.
+	 * @throws IllegalArgumentException if the version is not of the form
+	 * {@code <major>.<minor>}
+	 */
 	public AdaptiveCard withVersion(String explicitVersion) {
 		return new AdaptiveCard(this.body, this.actions, this.msteams, explicitVersion);
 	}

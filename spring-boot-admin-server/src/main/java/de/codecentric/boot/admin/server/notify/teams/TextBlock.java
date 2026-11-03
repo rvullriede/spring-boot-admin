@@ -37,26 +37,44 @@ public record TextBlock(String text, @Nullable TextSize size, @Nullable TextWeig
 		return new TextBlock(text, null, null, null, null, null);
 	}
 
+	/**
+	 * Returns a new text block with the size replaced.
+	 */
 	public TextBlock withSize(TextSize textSize) {
 		return new TextBlock(this.text, textSize, this.weight, this.color, this.wrap, this.horizontalAlignment);
 	}
 
+	/**
+	 * Returns a new text block with the weight replaced.
+	 */
 	public TextBlock withWeight(TextWeight textWeight) {
 		return new TextBlock(this.text, this.size, textWeight, this.color, this.wrap, this.horizontalAlignment);
 	}
 
+	/**
+	 * Returns a new text block with the color replaced.
+	 */
 	public TextBlock withColor(TextColor textColor) {
 		return withColor(textColor.value());
 	}
 
+	/**
+	 * Returns a new text block with the color replaced by an arbitrary value.
+	 */
 	public TextBlock withColor(String textColor) {
 		return new TextBlock(this.text, this.size, this.weight, textColor, this.wrap, this.horizontalAlignment);
 	}
 
+	/**
+	 * Returns a new text block with wrapping replaced.
+	 */
 	public TextBlock withWrap(boolean wrapText) {
 		return new TextBlock(this.text, this.size, this.weight, this.color, wrapText, this.horizontalAlignment);
 	}
 
+	/**
+	 * Returns a new text block with the alignment replaced.
+	 */
 	public TextBlock withHorizontalAlignment(HorizontalAlignment alignment) {
 		return new TextBlock(this.text, this.size, this.weight, this.color, this.wrap, alignment);
 	}
