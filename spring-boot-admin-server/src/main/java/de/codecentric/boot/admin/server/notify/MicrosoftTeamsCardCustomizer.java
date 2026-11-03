@@ -24,9 +24,11 @@ import de.codecentric.boot.admin.server.notify.teams.AdaptiveCard;
  * Callback interface that can be used to customize the {@link AdaptiveCard} the
  * {@link MicrosoftTeamsNotifier} posts.
  * <p>
- * Customizers run only on the three default cards (registered, deregistered and status
- * changed), in {@code @Order} order. A customizer that throws or returns {@code null} is
- * skipped and the card of the previous customizer is posted.
+ * Customizers run on the cards {@link MicrosoftTeamsNotifier#createCard} returns: the
+ * three default cards (registered, deregistered and status changed), plus any card a
+ * subclass adds. They run in {@code @Order} order. A customizer that throws or returns
+ * {@code null} is skipped, and the card from before it is passed on to the next
+ * customizer.
  */
 @FunctionalInterface
 public interface MicrosoftTeamsCardCustomizer {
@@ -36,7 +38,7 @@ public interface MicrosoftTeamsCardCustomizer {
 	 * @param card the card as built so far
 	 * @param event the event the card is about
 	 * @param instance the instance the event belongs to
-	 * @return the card to post
+	 * @return the customized card
 	 */
 	AdaptiveCard customize(AdaptiveCard card, InstanceEvent event, Instance instance);
 

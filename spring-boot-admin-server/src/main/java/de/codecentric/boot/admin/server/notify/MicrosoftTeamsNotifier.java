@@ -162,7 +162,8 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 	}
 
 	/**
-	 * Sets the customizers applied, in the given order, to the default cards.
+	 * Sets the customizers applied, in the given order, to the cards
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} returns.
 	 * @param cardCustomizers the customizers to apply
 	 */
 	public void setCardCustomizers(List<MicrosoftTeamsCardCustomizer> cardCustomizers) {
