@@ -16,6 +16,8 @@
 
 package de.codecentric.boot.admin.server.notify.teams;
 
+import java.util.Map;
+
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +59,19 @@ class TableTest {
 		assertThat(AdaptiveCard.of(Container.of(table)).version()).isEqualTo("1.5");
 		assertThat(AdaptiveCard.of(ColumnSet.of(Column.of(Width.AUTO, table))).version()).isEqualTo("1.5");
 		assertThat(AdaptiveCard.of(Container.of(Container.of(table))).version()).isEqualTo("1.5");
+	}
+
+	@Test
+	void tableInsideTableCellRaisesCardVersion() {
+		Table inner = Table.builder().build();
+		Table outer = Table.builder().row(TableCell.of(inner)).build();
+		assertThat(AdaptiveCard.of(outer).version()).isEqualTo("1.5");
+	}
+
+	@Test
+	void rawElementInsideTableCellRaisesCardVersion() {
+		Table table = Table.builder().row(TableCell.of(new RawElement(Map.of("type", "X"), "1.6"))).build();
+		assertThat(AdaptiveCard.of(table).version()).isEqualTo("1.6");
 	}
 
 }
