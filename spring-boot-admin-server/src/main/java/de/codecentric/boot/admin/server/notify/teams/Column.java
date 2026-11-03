@@ -52,7 +52,7 @@ public record Column(@Nullable Width width, List<CardElement> items) {
 	/**
 	 * @return the lowest card schema version supporting this column and its elements
 	 */
-	public String minVersion() {
+	String minVersion() {
 		return CardVersions
 			.max(Stream.concat(Stream.of(CardVersions.V1_0), this.items.stream().map(CardElement::minVersion)));
 	}
