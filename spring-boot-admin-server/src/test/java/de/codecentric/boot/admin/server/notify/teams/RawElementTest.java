@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +32,14 @@ class RawElementTest {
 	void serializesMapAsIs() {
 		TeamsJson.assertJson(new RawElement(Map.of("type", "RichTextBlock", "inlines", List.of("Hi")), "1.2"),
 				"{\"type\":\"RichTextBlock\",\"inlines\":[\"Hi\"]}");
+	}
+
+	@Test
+	void serializesNullValue() {
+		Map<String, @Nullable Object> json = new LinkedHashMap<>();
+		json.put("type", "X");
+		json.put("key", null);
+		TeamsJson.assertJson(new RawElement(json, "1.0"), "{\"type\":\"X\",\"key\":null}");
 	}
 
 	@Test

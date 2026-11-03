@@ -21,16 +21,19 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonValue;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An element written as the given JSON object, for Adaptive Card elements this model has
  * no type for, see
- * <a href="https://adaptivecards.microsoft.com/?topic=Element">Element</a>.
+ * <a href="https://adaptivecards.microsoft.com/?topic=Element">Element</a>. The map is
+ * written as given, null values included.
  *
  * @param json the properties of the element, including its {@code type}
  * @param minVersion the lowest card schema version supporting the element
  */
-public record RawElement(@JsonValue Map<String, Object> json, String minVersion) implements CardElement {
+public record RawElement(@JsonValue Map<String, ? extends @Nullable Object> json,
+		String minVersion) implements CardElement {
 
 	/**
 	 * Creates the element.
