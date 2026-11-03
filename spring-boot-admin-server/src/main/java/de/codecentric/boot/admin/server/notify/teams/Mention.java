@@ -16,7 +16,9 @@
 
 package de.codecentric.boot.admin.server.notify.teams;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -34,6 +36,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record Mention(String text, @JsonIgnore String id, @JsonIgnore String name) {
 
+	public Mention {
+		Objects.requireNonNull(id, "id");
+		Objects.requireNonNull(name, "name");
+	}
+
 	@JsonProperty("type")
 	public String type() {
 		return "mention";
@@ -41,7 +48,10 @@ public record Mention(String text, @JsonIgnore String id, @JsonIgnore String nam
 
 	@JsonProperty("mentioned")
 	public Map<String, String> mentioned() {
-		return Map.of("id", this.id, "name", this.name);
+		Map<String, String> mentioned = new LinkedHashMap<>();
+		mentioned.put("id", this.id);
+		mentioned.put("name", this.name);
+		return mentioned;
 	}
 
 }

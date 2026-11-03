@@ -18,6 +18,9 @@ package de.codecentric.boot.admin.server.notify.teams;
 
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+
 class MsTeamsTest {
 
 	@Test
@@ -32,6 +35,18 @@ class MsTeamsTest {
 					.withMentions(new Mention("<at>Adele Vance</at>", "AdeleV@contoso.onmicrosoft.com", "Adele Vance")),
 				"{\"width\":\"Full\",\"entities\":[{\"type\":\"mention\",\"text\":\"<at>Adele Vance</at>\","
 						+ "\"mentioned\":{\"id\":\"AdeleV@contoso.onmicrosoft.com\",\"name\":\"Adele Vance\"}}]}");
+	}
+
+	@Test
+	void mentionSerializesIdBeforeName() {
+		assertThat(TeamsJson.write(new Mention("<at>A</at>", "a@x", "A")))
+			.contains("\"mentioned\":{\"id\":\"a@x\",\"name\":\"A\"}");
+	}
+
+	@Test
+	void mentionRejectsMissingIdAndName() {
+		assertThatNullPointerException().isThrownBy(() -> new Mention("<at>A</at>", null, "A"));
+		assertThatNullPointerException().isThrownBy(() -> new Mention("<at>A</at>", "a@x", null));
 	}
 
 }
