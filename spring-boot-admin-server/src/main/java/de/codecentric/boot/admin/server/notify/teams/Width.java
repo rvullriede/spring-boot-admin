@@ -19,6 +19,7 @@ package de.codecentric.boot.admin.server.notify.teams;
 import java.util.Objects;
 
 import com.fasterxml.jackson.annotation.JsonValue;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The width of a <a href="https://adaptivecards.microsoft.com/?topic=Column">Column</a>:
@@ -75,7 +76,7 @@ public final class Width {
 	}
 
 	@Override
-	public boolean equals(Object other) {
+	public boolean equals(@Nullable Object other) {
 		return this == other || (other instanceof Width width && this.value.equals(width.value));
 	}
 
