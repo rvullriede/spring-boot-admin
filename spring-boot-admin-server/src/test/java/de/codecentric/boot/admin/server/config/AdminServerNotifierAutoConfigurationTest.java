@@ -16,6 +16,7 @@
 
 package de.codecentric.boot.admin.server.config;
 
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -27,6 +28,7 @@ import org.springframework.boot.webclient.autoconfigure.WebClientAutoConfigurati
 import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.annotation.Order;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 
 import de.codecentric.boot.admin.server.notify.CompositeNotifier;
@@ -35,6 +37,7 @@ import de.codecentric.boot.admin.server.notify.HipchatNotifier;
 import de.codecentric.boot.admin.server.notify.LetsChatNotifier;
 import de.codecentric.boot.admin.server.notify.MailNotifier;
 import de.codecentric.boot.admin.server.notify.MattermostNotifier;
+import de.codecentric.boot.admin.server.notify.MicrosoftTeamsCardCustomizer;
 import de.codecentric.boot.admin.server.notify.MicrosoftTeamsNotifier;
 import de.codecentric.boot.admin.server.notify.NotificationTrigger;
 import de.codecentric.boot.admin.server.notify.Notifier;
@@ -116,6 +119,16 @@ class AdminServerNotifierAutoConfigurationTest {
 	void test_ms_teams() {
 		this.contextRunner.withPropertyValues("spring.boot.admin.notify.ms-teams.webhook-url:https://example.com")
 			.run((context) -> assertThat(context).hasSingleBean(MicrosoftTeamsNotifier.class));
+	}
+
+	@Test
+	void test_msteams_cardCustomizers() {
+		this.contextRunner.withPropertyValues("spring.boot.admin.notify.ms-teams.webhook-url:https://example.com")
+			.withUserConfiguration(TeamsCardCustomizerConfig.class)
+			.run((context) -> assertThat(context.getBean(MicrosoftTeamsNotifier.class))
+				.extracting("cardCustomizers", InstanceOfAssertFactories.list(MicrosoftTeamsCardCustomizer.class))
+				.containsExactly(context.getBean("firstCustomizer", MicrosoftTeamsCardCustomizer.class),
+						context.getBean("secondCustomizer", MicrosoftTeamsCardCustomizer.class)));
 	}
 
 	@Test
@@ -206,6 +219,22 @@ class AdminServerNotifierAutoConfigurationTest {
 		@Bean
 		public JavaMailSenderImpl mailSender() {
 			return new JavaMailSenderImpl();
+		}
+
+	}
+
+	public static class TeamsCardCustomizerConfig {
+
+		@Bean
+		@Order(2)
+		public MicrosoftTeamsCardCustomizer secondCustomizer() {
+			return (card, event, instance) -> card;
+		}
+
+		@Bean
+		@Order(1)
+		public MicrosoftTeamsCardCustomizer firstCustomizer() {
+			return (card, event, instance) -> card;
 		}
 
 	}

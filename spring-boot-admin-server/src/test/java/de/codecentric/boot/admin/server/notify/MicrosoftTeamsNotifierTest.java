@@ -19,18 +19,23 @@ package de.codecentric.boot.admin.server.notify;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.skyscreamer.jsonassert.JSONAssert;
 import org.skyscreamer.jsonassert.JSONCompareMode;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.MediaType;
 import org.springframework.util.StreamUtils;
 import org.springframework.web.client.RestTemplate;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import de.codecentric.boot.admin.server.domain.entities.Instance;
@@ -46,8 +51,12 @@ import de.codecentric.boot.admin.server.domain.values.Registration;
 import de.codecentric.boot.admin.server.domain.values.StatusInfo;
 import de.codecentric.boot.admin.server.notify.MicrosoftTeamsNotifier.Message;
 import de.codecentric.boot.admin.server.notify.teams.AdaptiveCard;
+import de.codecentric.boot.admin.server.notify.teams.CardElement;
+import de.codecentric.boot.admin.server.notify.teams.Table;
+import de.codecentric.boot.admin.server.notify.teams.TableCell;
 import de.codecentric.boot.admin.server.notify.teams.TeamsMessage;
 import de.codecentric.boot.admin.server.notify.teams.TextBlock;
+import de.codecentric.boot.admin.server.notify.teams.Width;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -358,6 +367,98 @@ class MicrosoftTeamsNotifierTest {
 		assertThat(json.getBytes(StandardCharsets.UTF_8)).hasSizeLessThan(28 * 1024);
 	}
 
+	@Test
+	void test_customizersRunInOrder() {
+		notifier.setCardCustomizers(List.of(new AppendingCustomizer("first"), new AppendingCustomizer("second")));
+
+		notifyRegistered();
+
+		assertThat(lastTwoBodyElements(postedMessage())).containsExactly(TextBlock.of("first"), TextBlock.of("second"));
+	}
+
+	@Test
+	void test_customizerReceivesEventAndInstance() {
+		RecordingCustomizer recording = new RecordingCustomizer();
+		notifier.setCardCustomizers(List.of(recording));
+		InstanceRegisteredEvent event = new InstanceRegisteredEvent(instance.getId(), 1L, instance.getRegistration());
+
+		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
+
+		assertThat(recording.event).isSameAs(event);
+		assertThat(recording.instance).isSameAs(instance);
+	}
+
+	@Test
+	@ExtendWith(OutputCaptureExtension.class)
+	void test_throwingCustomizerIsSkipped(CapturedOutput output) {
+		notifier.setCardCustomizers(
+				List.of(new AppendingCustomizer("a"), new ThrowingCustomizer(), new AppendingCustomizer("b")));
+
+		notifyRegistered();
+
+		assertThat(lastTwoBodyElements(postedMessage())).containsExactly(TextBlock.of("a"), TextBlock.of("b"));
+		assertThat(output.getAll())
+			.containsOnlyOnce("Microsoft Teams card customizer " + ThrowingCustomizer.class.getName()
+					+ " failed, continuing without it")
+			.contains("WARN")
+			.contains("java.lang.IllegalStateException: boom");
+	}
+
+	@Test
+	@ExtendWith(OutputCaptureExtension.class)
+	void test_nullReturningCustomizerIsSkipped(CapturedOutput output) {
+		notifier.setCardCustomizers(List.of(new AppendingCustomizer("a"), new NullCustomizer()));
+
+		notifyRegistered();
+
+		List<CardElement> body = postedMessage().attachments().get(0).content().body();
+		assertThat(body.get(body.size() - 1)).isEqualTo(TextBlock.of("a"));
+		assertThat(output.getAll()).containsOnlyOnce("Microsoft Teams card customizer " + NullCustomizer.class.getName()
+				+ " returned null, continuing without it");
+	}
+
+	@Test
+	void test_customizerAppendsTable() throws Exception {
+		notifier.setCardCustomizers(List.of(issueTableCustomizer()));
+
+		StepVerifier
+			.create(notifier.doNotify(new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofDown()),
+					instance))
+			.verifyComplete();
+
+		JsonNode json = JsonMapper.builder()
+			.build()
+			.readTree(JsonMapper.builder().build().writeValueAsString(capturePostedEntity().getBody()));
+		assertThat(json.at("/attachments/0/content/version").asString()).isEqualTo("1.5");
+		JsonNode body = json.at("/attachments/0/content/body");
+		assertThat(body.get(body.size() - 1).get("type").asString()).isEqualTo("Table");
+	}
+
+	private void notifyRegistered() {
+		InstanceRegisteredEvent event = new InstanceRegisteredEvent(instance.getId(), 1L, instance.getRegistration());
+		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
+	}
+
+	private TeamsMessage postedMessage() {
+		return (TeamsMessage) capturePostedEntity().getBody();
+	}
+
+	private List<CardElement> lastTwoBodyElements(TeamsMessage message) {
+		List<CardElement> body = message.attachments().get(0).content().body();
+		return body.subList(body.size() - 2, body.size());
+	}
+
+	private static MicrosoftTeamsCardCustomizer issueTableCustomizer() {
+		return (card, event, instance) -> card.withBody(Table.builder()
+			.column(Width.weight(1))
+			.column(Width.weight(3))
+			.firstRowAsHeader(true)
+			.row(TableCell.of(TextBlock.of("Issues")), TableCell.of(TextBlock.of("Link")))
+			.row(TableCell.of(TextBlock.of(instance.getRegistration().getName())),
+					TableCell.of(TextBlock.of("https://issues.example.com/" + instance.getRegistration().getName())))
+			.build());
+	}
+
 	private void assertPostedJson(InstanceEvent event, Instance instance, String fixture) throws Exception {
 		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
 
@@ -439,6 +540,54 @@ class MicrosoftTeamsNotifierTest {
 			assertThat(fact.title()).isEqualTo("Management URL");
 			assertThat(fact.value()).isEqualTo(MANAGEMENT_URL);
 		});
+	}
+
+	static class AppendingCustomizer implements MicrosoftTeamsCardCustomizer {
+
+		private final String text;
+
+		AppendingCustomizer(String text) {
+			this.text = text;
+		}
+
+		@Override
+		public AdaptiveCard customize(AdaptiveCard card, InstanceEvent event, Instance instance) {
+			return card.withBody(TextBlock.of(this.text));
+		}
+
+	}
+
+	static class ThrowingCustomizer implements MicrosoftTeamsCardCustomizer {
+
+		@Override
+		public AdaptiveCard customize(AdaptiveCard card, InstanceEvent event, Instance instance) {
+			throw new IllegalStateException("boom");
+		}
+
+	}
+
+	static class NullCustomizer implements MicrosoftTeamsCardCustomizer {
+
+		@Override
+		public AdaptiveCard customize(AdaptiveCard card, InstanceEvent event, Instance instance) {
+			return null;
+		}
+
+	}
+
+	static class RecordingCustomizer implements MicrosoftTeamsCardCustomizer {
+
+		private InstanceEvent event;
+
+		private Instance instance;
+
+		@Override
+		public AdaptiveCard customize(AdaptiveCard card, InstanceEvent event, Instance instance) {
+			this.event = event;
+			this.instance = instance;
+			return card;
+		}
+
 	}
 
 }

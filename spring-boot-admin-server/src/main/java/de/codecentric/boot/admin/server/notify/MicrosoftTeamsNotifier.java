@@ -31,6 +31,8 @@ import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ParserContext;
@@ -59,6 +61,8 @@ import de.codecentric.boot.admin.server.notify.teams.TextWeight;
 import static java.util.Collections.singletonList;
 
 public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
+
+	private static final Logger log = LoggerFactory.getLogger(MicrosoftTeamsNotifier.class);
 
 	private static final String STATUS_KEY = "Status";
 
@@ -132,6 +136,8 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 	@Getter
 	private String statusChangedTitle = "Status Changed";
 
+	private List<MicrosoftTeamsCardCustomizer> cardCustomizers = List.of();
+
 	public MicrosoftTeamsNotifier(InstanceRepository repository, RestTemplate restTemplate) {
 		super(repository);
 		this.restTemplate = restTemplate;
@@ -152,7 +158,38 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 		if (card == null) {
 			return Mono.empty();
 		}
-		return postMessage(TeamsMessage.of(card));
+		return postMessage(TeamsMessage.of(customize(card, event, instance)));
+	}
+
+	/**
+	 * Sets the customizers applied, in the given order, to the default cards.
+	 * @param cardCustomizers the customizers to apply
+	 */
+	public void setCardCustomizers(List<MicrosoftTeamsCardCustomizer> cardCustomizers) {
+		this.cardCustomizers = List.copyOf(cardCustomizers);
+	}
+
+	private de.codecentric.boot.admin.server.notify.teams.AdaptiveCard customize(
+			de.codecentric.boot.admin.server.notify.teams.AdaptiveCard card, InstanceEvent event, Instance instance) {
+		de.codecentric.boot.admin.server.notify.teams.AdaptiveCard customized = card;
+		for (MicrosoftTeamsCardCustomizer customizer : this.cardCustomizers) {
+			try {
+				de.codecentric.boot.admin.server.notify.teams.AdaptiveCard result = customizer.customize(customized,
+						event, instance);
+				if (result == null) {
+					log.warn("Microsoft Teams card customizer {} returned null, continuing without it",
+							customizer.getClass().getName());
+				}
+				else {
+					customized = result;
+				}
+			}
+			catch (RuntimeException ex) {
+				log.warn("Microsoft Teams card customizer {} failed, continuing without it",
+						customizer.getClass().getName(), ex);
+			}
+		}
+		return customized;
 	}
 
 	/**
@@ -227,7 +264,8 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 	 * @param context the context the expressions are evaluated in
 	 * @return the message
 	 * @deprecated {@code doNotify} no longer calls this method; override
-	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} instead
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} or register a
+	 * {@link MicrosoftTeamsCardCustomizer} bean instead
 	 */
 	@Deprecated(since = "4.2.0", forRemoval = true)
 	protected Message getDeregisteredMessage(Instance instance, EvaluationContext context) {
@@ -241,7 +279,8 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 	 * @param context the context the expressions are evaluated in
 	 * @return the message
 	 * @deprecated {@code doNotify} no longer calls this method; override
-	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} instead
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} or register a
+	 * {@link MicrosoftTeamsCardCustomizer} bean instead
 	 */
 	@Deprecated(since = "4.2.0", forRemoval = true)
 	protected Message getRegisteredMessage(Instance instance, EvaluationContext context) {
@@ -255,7 +294,8 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 	 * @param context the context the expressions are evaluated in
 	 * @return the message
 	 * @deprecated {@code doNotify} no longer calls this method; override
-	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} instead
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} or register a
+	 * {@link MicrosoftTeamsCardCustomizer} bean instead
 	 */
 	@Deprecated(since = "4.2.0", forRemoval = true)
 	protected Message getStatusChangedTextExpression(Instance instance, EvaluationContext context) {
@@ -271,7 +311,8 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 	 * @param context the context the title color expression is evaluated in
 	 * @return the message
 	 * @deprecated {@code doNotify} no longer calls this method; override
-	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} instead
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} or register a
+	 * {@link MicrosoftTeamsCardCustomizer} bean instead
 	 */
 	@Deprecated(since = "4.2.0", forRemoval = true)
 	protected Message createMessage(Instance instance, String registeredTitle, String activitySubtitle,
