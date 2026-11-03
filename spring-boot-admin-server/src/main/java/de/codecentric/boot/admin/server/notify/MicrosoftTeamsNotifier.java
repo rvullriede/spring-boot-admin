@@ -236,12 +236,12 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 	}
 
 	/**
-	 * Posts the payload as JSON to the configured webhook.
-	 * @param payload the payload to post, usually a {@link TeamsMessage}
+	 * Posts the message as JSON to the configured webhook.
+	 * @param message the message to post
 	 * @return a {@link Mono} that posts when subscribed, or that errors with an
 	 * {@link IllegalStateException} if no webhook url is set
 	 */
-	protected Mono<Void> postMessage(Object payload) {
+	protected Mono<Void> postMessage(TeamsMessage message) {
 		if (webhookUrl == null) {
 			return Mono.error(new IllegalStateException("'webhookUrl' must not be null."));
 		}
@@ -250,7 +250,7 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 		headers.setContentType(MediaType.APPLICATION_JSON);
 		URI uri = URI.create(webhookUrl);
 		return Mono.fromRunnable(
-				() -> this.restTemplate.postForEntity(uri, new HttpEntity<Object>(payload, headers), Void.class));
+				() -> this.restTemplate.postForEntity(uri, new HttpEntity<TeamsMessage>(message, headers), Void.class));
 	}
 
 	@Override
