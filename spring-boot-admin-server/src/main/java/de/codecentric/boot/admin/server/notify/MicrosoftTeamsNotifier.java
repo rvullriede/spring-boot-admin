@@ -19,6 +19,7 @@ package de.codecentric.boot.admin.server.notify;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -30,6 +31,8 @@ import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ParserContext;
@@ -49,10 +52,17 @@ import de.codecentric.boot.admin.server.domain.events.InstanceDeregisteredEvent;
 import de.codecentric.boot.admin.server.domain.events.InstanceEvent;
 import de.codecentric.boot.admin.server.domain.events.InstanceRegisteredEvent;
 import de.codecentric.boot.admin.server.domain.events.InstanceStatusChangedEvent;
+import de.codecentric.boot.admin.server.notify.teams.FactSet;
+import de.codecentric.boot.admin.server.notify.teams.TeamsMessage;
+import de.codecentric.boot.admin.server.notify.teams.TextBlock;
+import de.codecentric.boot.admin.server.notify.teams.TextSize;
+import de.codecentric.boot.admin.server.notify.teams.TextWeight;
 
 import static java.util.Collections.singletonList;
 
 public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
+
+	private static final Logger log = LoggerFactory.getLogger(MicrosoftTeamsNotifier.class);
 
 	private static final String STATUS_KEY = "Status";
 
@@ -126,6 +136,8 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 	@Getter
 	private String statusChangedTitle = "Status Changed";
 
+	private List<MicrosoftTeamsCardCustomizer> cardCustomizers = List.of();
+
 	public MicrosoftTeamsNotifier(InstanceRepository repository, RestTemplate restTemplate) {
 		super(repository);
 		this.restTemplate = restTemplate;
@@ -141,31 +153,104 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 
 	@Override
 	protected Mono<Void> doNotify(InstanceEvent event, Instance instance) {
-		Message message;
 		EvaluationContext context = createEvaluationContext(event, instance);
-		if (event instanceof InstanceRegisteredEvent) {
-			message = getRegisteredMessage(instance, context);
-		}
-		else if (event instanceof InstanceDeregisteredEvent) {
-			message = getDeregisteredMessage(instance, context);
-		}
-		else if (event instanceof InstanceStatusChangedEvent) {
-			message = getStatusChangedTextExpression(instance, context);
-		}
-		else {
+		de.codecentric.boot.admin.server.notify.teams.AdaptiveCard card = createCard(event, instance, context);
+		if (card == null) {
 			return Mono.empty();
 		}
+		return postMessage(TeamsMessage.of(customize(card, event, instance)));
+	}
 
-		HttpHeaders headers = new HttpHeaders();
-		headers.setContentType(MediaType.APPLICATION_JSON);
+	/**
+	 * Sets the customizers applied, in the given order, to the cards
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} returns.
+	 * @param cardCustomizers the customizers to apply
+	 */
+	public void setCardCustomizers(List<MicrosoftTeamsCardCustomizer> cardCustomizers) {
+		this.cardCustomizers = List.copyOf(cardCustomizers);
+	}
 
+	private de.codecentric.boot.admin.server.notify.teams.AdaptiveCard customize(
+			de.codecentric.boot.admin.server.notify.teams.AdaptiveCard card, InstanceEvent event, Instance instance) {
+		de.codecentric.boot.admin.server.notify.teams.AdaptiveCard customized = card;
+		for (MicrosoftTeamsCardCustomizer customizer : this.cardCustomizers) {
+			try {
+				de.codecentric.boot.admin.server.notify.teams.AdaptiveCard result = customizer.customize(customized,
+						event, instance);
+				if (result == null) {
+					log.warn("Microsoft Teams card customizer {} returned null, continuing without it",
+							customizer.getClass().getName());
+				}
+				else {
+					customized = result;
+				}
+			}
+			catch (RuntimeException ex) {
+				log.warn("Microsoft Teams card customizer {} failed, continuing without it",
+						customizer.getClass().getName(), ex);
+			}
+		}
+		return customized;
+	}
+
+	/**
+	 * Creates the default card for a registered, deregistered or status changed event.
+	 * @param event the event to notify about
+	 * @param instance the instance the event belongs to
+	 * @param context the context the title color and text expressions are evaluated in
+	 * @return the card, or {@code null} if the event gets no card
+	 */
+	protected de.codecentric.boot.admin.server.notify.teams.@Nullable AdaptiveCard createCard(InstanceEvent event,
+			Instance instance, EvaluationContext context) {
+		String title;
+		Expression textExpression;
+		if (event instanceof InstanceRegisteredEvent) {
+			title = registeredTitle;
+			textExpression = registeredTextExpression;
+		}
+		else if (event instanceof InstanceDeregisteredEvent) {
+			title = deregisteredTitle;
+			textExpression = deregisteredTextExpression;
+		}
+		else if (event instanceof InstanceStatusChangedEvent) {
+			title = statusChangedTitle;
+			textExpression = statusChangedTextExpression;
+		}
+		else {
+			return null;
+		}
+
+		String text = evaluateExpression(context, textExpression);
+		String titleColor = evaluateExpression(context, titleColorExpression);
+		List<de.codecentric.boot.admin.server.notify.teams.Fact> facts = instanceFacts(instance).entrySet()
+			.stream()
+			.map((fact) -> de.codecentric.boot.admin.server.notify.teams.Fact.of(fact.getKey(), fact.getValue()))
+			.toList();
+
+		return de.codecentric.boot.admin.server.notify.teams.AdaptiveCard.of(
+				TextBlock.of(title).withSize(TextSize.LARGE).withWeight(TextWeight.BOLDER).withColor(titleColor),
+				TextBlock.of(instance.getRegistration().getName())
+					.withSize(TextSize.MEDIUM)
+					.withWeight(TextWeight.BOLDER),
+				TextBlock.of(text).withWrap(true), new FactSet(facts));
+	}
+
+	/**
+	 * Posts the message as JSON to the configured webhook.
+	 * @param message the message to post
+	 * @return a {@link Mono} that posts when subscribed, or that errors with an
+	 * {@link IllegalStateException} if no webhook url is set
+	 */
+	protected Mono<Void> postMessage(TeamsMessage message) {
 		if (webhookUrl == null) {
 			return Mono.error(new IllegalStateException("'webhookUrl' must not be null."));
 		}
 
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.APPLICATION_JSON);
 		URI uri = URI.create(webhookUrl);
 		return Mono.fromRunnable(
-				() -> this.restTemplate.postForEntity(uri, new HttpEntity<Object>(message, headers), Void.class));
+				() -> this.restTemplate.postForEntity(uri, new HttpEntity<TeamsMessage>(message, headers), Void.class));
 	}
 
 	@Override
@@ -174,29 +259,67 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 				|| super.shouldNotify(event, instance);
 	}
 
+	/**
+	 * Creates the message for a deregistered event.
+	 * @param instance the instance the event belongs to
+	 * @param context the context the expressions are evaluated in
+	 * @return the message
+	 * @deprecated {@code doNotify} no longer calls this method; override
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} or register a
+	 * {@link MicrosoftTeamsCardCustomizer} bean instead
+	 */
+	@Deprecated(since = "4.2.0", forRemoval = true)
 	protected Message getDeregisteredMessage(Instance instance, EvaluationContext context) {
 		String textValue = evaluateExpression(context, deregisteredTextExpression);
 		return createMessage(instance, deregisteredTitle, textValue, context);
 	}
 
+	/**
+	 * Creates the message for a registered event.
+	 * @param instance the instance the event belongs to
+	 * @param context the context the expressions are evaluated in
+	 * @return the message
+	 * @deprecated {@code doNotify} no longer calls this method; override
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} or register a
+	 * {@link MicrosoftTeamsCardCustomizer} bean instead
+	 */
+	@Deprecated(since = "4.2.0", forRemoval = true)
 	protected Message getRegisteredMessage(Instance instance, EvaluationContext context) {
 		String textValue = evaluateExpression(context, registeredTextExpression);
 		return createMessage(instance, registeredTitle, textValue, context);
 	}
 
+	/**
+	 * Creates the message for a status changed event.
+	 * @param instance the instance the event belongs to
+	 * @param context the context the expressions are evaluated in
+	 * @return the message
+	 * @deprecated {@code doNotify} no longer calls this method; override
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} or register a
+	 * {@link MicrosoftTeamsCardCustomizer} bean instead
+	 */
+	@Deprecated(since = "4.2.0", forRemoval = true)
 	protected Message getStatusChangedTextExpression(Instance instance, EvaluationContext context) {
 		String textValue = evaluateExpression(context, statusChangedTextExpression);
 		return createMessage(instance, statusChangedTitle, textValue, context);
 	}
 
+	/**
+	 * Creates the message with the default card layout.
+	 * @param instance the instance the event belongs to
+	 * @param registeredTitle the card title
+	 * @param activitySubtitle the card text
+	 * @param context the context the title color expression is evaluated in
+	 * @return the message
+	 * @deprecated {@code doNotify} no longer calls this method; override
+	 * {@link #createCard(InstanceEvent, Instance, EvaluationContext)} or register a
+	 * {@link MicrosoftTeamsCardCustomizer} bean instead
+	 */
+	@Deprecated(since = "4.2.0", forRemoval = true)
 	protected Message createMessage(Instance instance, String registeredTitle, String activitySubtitle,
 			EvaluationContext context) {
 		List<Fact> facts = new ArrayList<>();
-		addFactIfNotNull(facts, STATUS_KEY, instance.getStatusInfo().getStatus());
-		addFactIfNotNull(facts, SERVICE_URL_KEY, instance.getRegistration().getServiceUrl());
-		addFactIfNotNull(facts, HEALTH_URL_KEY, instance.getRegistration().getHealthUrl());
-		addFactIfNotNull(facts, MANAGEMENT_URL_KEY, instance.getRegistration().getManagementUrl());
-		addFactIfNotNull(facts, SOURCE_KEY, instance.getRegistration().getSource());
+		instanceFacts(instance).forEach((title, value) -> facts.add(new Fact(title, value)));
 
 		String titleColorValue = evaluateExpression(context, titleColorExpression);
 
@@ -247,9 +370,19 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 			.build();
 	}
 
-	private void addFactIfNotNull(List<Fact> facts, String title, @Nullable String value) {
+	private Map<String, String> instanceFacts(Instance instance) {
+		Map<String, String> facts = new LinkedHashMap<>();
+		putIfNotBlank(facts, STATUS_KEY, instance.getStatusInfo().getStatus());
+		putIfNotBlank(facts, SERVICE_URL_KEY, instance.getRegistration().getServiceUrl());
+		putIfNotBlank(facts, HEALTH_URL_KEY, instance.getRegistration().getHealthUrl());
+		putIfNotBlank(facts, MANAGEMENT_URL_KEY, instance.getRegistration().getManagementUrl());
+		putIfNotBlank(facts, SOURCE_KEY, instance.getRegistration().getSource());
+		return facts;
+	}
+
+	private static void putIfNotBlank(Map<String, String> facts, String title, @Nullable String value) {
 		if (value != null && !value.isBlank()) {
-			facts.add(new Fact(title, value));
+			facts.put(title, value);
 		}
 	}
 
@@ -296,6 +429,11 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 				ParserContext.TEMPLATE_EXPRESSION);
 	}
 
+	/**
+	 * @deprecated use the types in {@code de.codecentric.boot.admin.server.notify.teams},
+	 * starting with {@link de.codecentric.boot.admin.server.notify.teams.AdaptiveCard}
+	 */
+	@Deprecated(since = "4.2.0", forRemoval = true)
 	@Data
 	@Builder
 	@JsonInclude(JsonInclude.Include.NON_NULL)
@@ -308,6 +446,11 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 
 	}
 
+	/**
+	 * @deprecated use the types in {@code de.codecentric.boot.admin.server.notify.teams},
+	 * starting with {@link de.codecentric.boot.admin.server.notify.teams.AdaptiveCard}
+	 */
+	@Deprecated(since = "4.2.0", forRemoval = true)
 	@Data
 	@Builder
 	@JsonInclude(JsonInclude.Include.NON_NULL)
@@ -321,6 +464,11 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 
 	}
 
+	/**
+	 * @deprecated use the types in {@code de.codecentric.boot.admin.server.notify.teams},
+	 * starting with {@link de.codecentric.boot.admin.server.notify.teams.AdaptiveCard}
+	 */
+	@Deprecated(since = "4.2.0", forRemoval = true)
 	@Data
 	@Builder
 	@JsonInclude(JsonInclude.Include.NON_NULL)
@@ -339,6 +487,11 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 
 	}
 
+	/**
+	 * @deprecated use the types in {@code de.codecentric.boot.admin.server.notify.teams},
+	 * starting with {@link de.codecentric.boot.admin.server.notify.teams.AdaptiveCard}
+	 */
+	@Deprecated(since = "4.2.0", forRemoval = true)
 	@Data
 	@Builder
 	@JsonInclude(JsonInclude.Include.NON_NULL)
@@ -360,6 +513,11 @@ public class MicrosoftTeamsNotifier extends AbstractStatusChangeNotifier {
 
 	}
 
+	/**
+	 * @deprecated use the types in {@code de.codecentric.boot.admin.server.notify.teams},
+	 * starting with {@link de.codecentric.boot.admin.server.notify.teams.AdaptiveCard}
+	 */
+	@Deprecated(since = "4.2.0", forRemoval = true)
 	public record Fact(String title, @Nullable String value) {
 	}
 

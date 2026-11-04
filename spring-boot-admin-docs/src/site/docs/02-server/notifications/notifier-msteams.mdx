@@ -28,6 +28,47 @@ The expression-based properties are parsed as SpEL template expressions (`#{ ...
 | `instance` | [`Instance`](https://github.com/codecentric/spring-boot-admin/blob/master/spring-boot-admin-server/src/main/java/de/codecentric/boot/admin/server/domain/entities/Instance.java) | The full instance aggregate. Frequently used paths: `instance.id` (e.g. "TestAppId"), `instance.registration.name` (e.g. "Test App"), `instance.statusInfo.status` (one of `UP`, `DOWN`, `OFFLINE`, `RESTRICTED`, `OUT_OF_SERVICE`, `UNKNOWN`). |
 | `lastStatus` | `String` | The previous status code of the instance (e.g. `UP`, `DOWN`, `UNKNOWN`), useful for building messages like `from #{lastStatus} to #{event.statusInfo.status}`. |
 
+## Customizing the card
+
+Register a `MicrosoftTeamsCardCustomizer` bean to change the card before it is posted. Cards are immutable, so return the changed copy. This example appends a table:
+
+```java
+import de.codecentric.boot.admin.server.notify.MicrosoftTeamsCardCustomizer;
+import de.codecentric.boot.admin.server.notify.teams.Table;
+import de.codecentric.boot.admin.server.notify.teams.TableCell;
+import de.codecentric.boot.admin.server.notify.teams.TextBlock;
+import de.codecentric.boot.admin.server.notify.teams.Width;
+import org.springframework.context.annotation.Bean;
+
+@Bean
+public MicrosoftTeamsCardCustomizer issueTableCustomizer() {
+	return (card, event, instance) -> card.withBody(Table.builder()
+		.column(Width.weight(1))
+		.column(Width.weight(3))
+		.firstRowAsHeader(true)
+		.row(TableCell.of(TextBlock.of("Issues")), TableCell.of(TextBlock.of("Link")))
+		.row(TableCell.of(TextBlock.of(instance.getRegistration().getName())),
+				TableCell.of(TextBlock.of("https://issues.example.com/" + instance.getRegistration().getName())))
+		.build());
+}
+```
+
+Customizers run in `@Order` order on the cards `createCard` returns: the three default cards (registered, deregistered, status changed), plus any card a subclass adds. A customizer that throws or returns `null` is skipped with a warning, and the card from before it is passed on to the next customizer.
+
+A user-defined `MicrosoftTeamsNotifier` bean must call `setCardCustomizers` itself. A subclass that sends its own cards builds them with the types in `de.codecentric.boot.admin.server.notify.teams` and posts them with `postMessage`.
+
+### Card version
+
+The card declares the highest minimum version of the elements and actions it contains, at least `1.2`. A `Table` makes it `1.5`. `withVersion` overrides the computed value. See the [Adaptive Cards schema](https://adaptivecards.microsoft.com/?topic=AdaptiveCard) for what each version supports.
+
+### Size limit
+
+Teams webhooks reject messages over 28 KB. The notifier does not enforce this limit.
+
+### Deprecated API
+
+The nested classes `MicrosoftTeamsNotifier.Message`, `Attachment`, `AdaptiveCard`, `CardElement` and `Fact` are deprecated for removal, as are the methods `getRegisteredMessage`, `getDeregisteredMessage`, `getStatusChangedTextExpression(Instance, EvaluationContext)` and `createMessage`. `doNotify` no longer calls these methods, so overrides stop taking effect. Override `createCard` or register a customizer instead.
+
 <PropertyTable
   title="Microsoft Teams notifications configuration options"
   properties={metadata.properties}

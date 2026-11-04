@@ -16,34 +16,53 @@
 
 package de.codecentric.boot.admin.server.notify;
 
+import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.skyscreamer.jsonassert.JSONAssert;
 import org.skyscreamer.jsonassert.JSONCompareMode;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.MediaType;
+import org.springframework.util.StreamUtils;
 import org.springframework.web.client.RestTemplate;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import de.codecentric.boot.admin.server.domain.entities.Instance;
 import de.codecentric.boot.admin.server.domain.entities.InstanceRepository;
 import de.codecentric.boot.admin.server.domain.events.InstanceDeregisteredEvent;
+import de.codecentric.boot.admin.server.domain.events.InstanceEvent;
+import de.codecentric.boot.admin.server.domain.events.InstanceInfoChangedEvent;
 import de.codecentric.boot.admin.server.domain.events.InstanceRegisteredEvent;
 import de.codecentric.boot.admin.server.domain.events.InstanceStatusChangedEvent;
+import de.codecentric.boot.admin.server.domain.values.Info;
 import de.codecentric.boot.admin.server.domain.values.InstanceId;
 import de.codecentric.boot.admin.server.domain.values.Registration;
 import de.codecentric.boot.admin.server.domain.values.StatusInfo;
 import de.codecentric.boot.admin.server.notify.MicrosoftTeamsNotifier.Message;
+import de.codecentric.boot.admin.server.notify.teams.AdaptiveCard;
+import de.codecentric.boot.admin.server.notify.teams.CardElement;
+import de.codecentric.boot.admin.server.notify.teams.Table;
+import de.codecentric.boot.admin.server.notify.teams.TableCell;
+import de.codecentric.boot.admin.server.notify.teams.TeamsMessage;
+import de.codecentric.boot.admin.server.notify.teams.TextBlock;
+import de.codecentric.boot.admin.server.notify.teams.Width;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class MicrosoftTeamsNotifierTest {
@@ -62,6 +81,8 @@ class MicrosoftTeamsNotifierTest {
 
 	private RestTemplate mockRestTemplate;
 
+	private InstanceRepository repository;
+
 	private Instance instance;
 
 	@BeforeEach
@@ -72,7 +93,7 @@ class MicrosoftTeamsNotifierTest {
 				.serviceUrl(SERVICE_URL)
 				.build());
 
-		InstanceRepository repository = mock(InstanceRepository.class);
+		repository = mock(InstanceRepository.class);
 		when(repository.find(instance.getId())).thenReturn(Mono.just(instance));
 
 		mockRestTemplate = mock(RestTemplate.class);
@@ -81,51 +102,33 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
-	void test_onClientApplicationDeRegisteredEvent_resolve() {
-		InstanceDeregisteredEvent event = new InstanceDeregisteredEvent(instance.getId(), 1L);
-
-		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
-
-		ArgumentCaptor<HttpEntity<Message>> entity = ArgumentCaptor.forClass(HttpEntity.class);
-		verify(mockRestTemplate).postForEntity(eq(URI.create("https://example.com")), entity.capture(), eq(Void.class));
-
-		assertThat(entity.getValue().getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
-		assertThat(entity.getValue().getBody()).isNotNull();
-		assertMessage(entity.getValue().getBody(), notifier.getDeregisteredTitle(),
-				"Test App with id TestAppId has de-registered from Spring Boot Admin", "Accent");
+	void test_onClientApplicationDeRegisteredEvent_resolve() throws Exception {
+		assertPostedJson(new InstanceDeregisteredEvent(instance.getId(), 1L), instance, "ms-teams-deregistered.json");
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
-	void test_onApplicationRegisteredEvent_resolve() {
-		InstanceRegisteredEvent event = new InstanceRegisteredEvent(instance.getId(), 1L, instance.getRegistration());
-
-		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
-
-		ArgumentCaptor<HttpEntity<Message>> entity = ArgumentCaptor.forClass(HttpEntity.class);
-		verify(mockRestTemplate).postForEntity(eq(URI.create("https://example.com")), entity.capture(), eq(Void.class));
-
-		assertThat(entity.getValue().getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
-		assertThat(entity.getValue().getBody()).isNotNull();
-		assertMessage(entity.getValue().getBody(), notifier.getRegisteredTitle(),
-				"Test App with id TestAppId has registered with Spring Boot Admin", "Accent");
+	void test_onApplicationRegisteredEvent_resolve() throws Exception {
+		assertPostedJson(new InstanceRegisteredEvent(instance.getId(), 1L, instance.getRegistration()), instance,
+				"ms-teams-registered.json");
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
-	void test_onApplicationStatusChangedEvent_resolve() {
-		InstanceStatusChangedEvent event = new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofUp());
+	void test_onApplicationStatusChangedEvent_resolve() throws Exception {
+		assertPostedJson(new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofUp()), instance,
+				"ms-teams-status-changed.json");
+	}
 
-		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
+	@Test
+	void test_onApplicationStatusChangedEvent_withSource_resolve() throws Exception {
+		Instance instanceWithSource = Instance.create(InstanceId.of(APP_ID))
+			.register(Registration.create(APP_NAME, HEALTH_URL)
+				.managementUrl(MANAGEMENT_URL)
+				.serviceUrl(SERVICE_URL)
+				.source("http-api")
+				.build());
 
-		ArgumentCaptor<HttpEntity<Message>> entity = ArgumentCaptor.forClass(HttpEntity.class);
-		verify(mockRestTemplate).postForEntity(eq(URI.create("https://example.com")), entity.capture(), eq(Void.class));
-
-		assertThat(entity.getValue().getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
-		assertThat(entity.getValue().getBody()).isNotNull();
-		assertMessage(entity.getValue().getBody(), notifier.getStatusChangedTitle(),
-				"Test App with id TestAppId changed status from UNKNOWN to UP", "Good");
+		assertPostedJson(new InstanceStatusChangedEvent(instanceWithSource.getId(), 1L, StatusInfo.ofDown()),
+				instanceWithSource, "ms-teams-status-changed-with-source.json");
 	}
 
 	@Test
@@ -141,6 +144,7 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
+	@SuppressWarnings("removal")
 	void test_getDeregisteredMessageForAppReturns_correctContent() {
 		Message message = notifier.getDeregisteredMessage(instance,
 				notifier.createEvaluationContext(new InstanceDeregisteredEvent(instance.getId(), 1L), instance));
@@ -150,6 +154,7 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
+	@SuppressWarnings("removal")
 	void test_getRegisteredMessageForAppReturns_correctContent() {
 		Message message = notifier.getRegisteredMessage(instance,
 				notifier.createEvaluationContext(new InstanceDeregisteredEvent(instance.getId(), 1L), instance));
@@ -159,6 +164,7 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
+	@SuppressWarnings("removal")
 	void test_getStatusChangedMessageForAppReturns_correctContent() {
 		Message message = notifier.getStatusChangedTextExpression(instance, notifier.createEvaluationContext(
 				new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofDown()), instance));
@@ -168,6 +174,7 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
+	@SuppressWarnings("removal")
 	void test_getStatusChangedMessageForAppReturns_UP_to_DOWN() {
 		notifier.updateLastStatus(new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofUp()));
 
@@ -179,6 +186,7 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
+	@SuppressWarnings("removal")
 	void test_getStatusChangedMessageWithExtraFormatArgumentReturns_activitySubtitlePatternWithAppName() {
 		notifier.setStatusChangedTextExpression("STATUS_ACTIVITY_PATTERN_#{instance.registration.name}");
 		Message message = notifier.getStatusChangedTextExpression(instance,
@@ -188,6 +196,7 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
+	@SuppressWarnings("removal")
 	void test_getRegisterMessageWithExtraFormatArgumentReturns_activitySubtitlePatternWithAppName() {
 		notifier.setRegisteredTextExpression("REGISTER_ACTIVITY_PATTERN_#{instance.registration.name}");
 		Message message = notifier.getRegisteredMessage(instance,
@@ -197,6 +206,7 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
+	@SuppressWarnings("removal")
 	void test_getDeRegisterMessageWithExtraFormatArgumentReturns_activitySubtitlePatternWithAppName() {
 		notifier.setDeregisteredTextExpression("DEREGISTER_ACTIVITY_PATTERN_#{instance.registration.name}");
 		Message message = notifier.getDeregisteredMessage(instance,
@@ -206,6 +216,7 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
+	@SuppressWarnings("removal")
 	void test_getStatusChangedMessage_parsesThemeColorFromSpelExpression() {
 		notifier.setTitleColorExpression(
 				"#{event.type == 'STATUS_CHANGED' ? (event.statusInfo.status=='UP' ? 'green' : 'red') : 'blue'}");
@@ -217,6 +228,7 @@ class MicrosoftTeamsNotifierTest {
 	}
 
 	@Test
+	@SuppressWarnings("removal")
 	void test_messageSerializesToExpectedJsonStructure() throws Exception {
 		// Update instance to UP status
 		Instance upInstance = Instance.create(instance.getId())
@@ -276,14 +288,209 @@ class MicrosoftTeamsNotifierTest {
 		JSONAssert.assertEquals(expectedJson, actual, JSONCompareMode.NON_EXTENSIBLE);
 	}
 
+	@Test
+	void test_createCard_returnsNullForOtherEvents() {
+		InstanceInfoChangedEvent event = new InstanceInfoChangedEvent(instance.getId(), 1L, Info.empty());
+
+		assertThat(notifier.createCard(event, instance, notifier.createEvaluationContext(event, instance))).isNull();
+	}
+
+	@Test
+	void test_doNotify_ignoresOtherEvents() {
+		StepVerifier
+			.create(notifier.doNotify(new InstanceInfoChangedEvent(instance.getId(), 1L, Info.empty()), instance))
+			.verifyComplete();
+
+		verifyNoInteractions(mockRestTemplate);
+	}
+
+	@Test
+	void test_doNotify_postsTypedMessage() {
+		StepVerifier
+			.create(notifier.doNotify(new InstanceRegisteredEvent(instance.getId(), 1L, instance.getRegistration()),
+					instance))
+			.verifyComplete();
+
+		assertThat(capturePostedEntity().getBody()).isInstanceOf(TeamsMessage.class);
+	}
+
+	@Test
+	void test_titleColorExpression_passesArbitraryStringThrough() {
+		notifier.setTitleColorExpression("#{event.type == 'STATUS_CHANGED' ? 'green' : 'blue'}");
+
+		StepVerifier
+			.create(notifier.doNotify(new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofUp()),
+					instance))
+			.verifyComplete();
+
+		JsonMapper mapper = JsonMapper.builder().build();
+		String json = mapper.writeValueAsString(capturePostedEntity().getBody());
+		assertThat(mapper.readTree(json).at("/attachments/0/content/body/0/color").asString()).isEqualTo("green");
+	}
+
+	@Test
+	void test_postMessage_postsSubclassCard() {
+		TeamsMessage own = TeamsMessage.of(AdaptiveCard.of(TextBlock.of("Deployed")));
+		MicrosoftTeamsNotifier deploymentNotifier = new MicrosoftTeamsNotifier(repository, mockRestTemplate) {
+			@Override
+			protected Mono<Void> doNotify(InstanceEvent event, Instance instance) {
+				return postMessage(own);
+			}
+		};
+		deploymentNotifier.setWebhookUrl("https://example.com");
+
+		StepVerifier.create(deploymentNotifier.doNotify(new InstanceDeregisteredEvent(instance.getId(), 1L), instance))
+			.verifyComplete();
+
+		HttpEntity<Object> entity = capturePostedEntity();
+		assertThat(entity.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
+		assertThat(entity.getBody()).isSameAs(own);
+	}
+
+	@Test
+	void test_postMessage_withoutWebhookUrl_errors() {
+		notifier.setWebhookUrl(null);
+
+		StepVerifier.create(notifier.postMessage(TeamsMessage.of(AdaptiveCard.of())))
+			.verifyErrorMessage("'webhookUrl' must not be null.");
+		verifyNoInteractions(mockRestTemplate);
+	}
+
+	@Test
+	void test_defaultStatusChangedCard_isWellUnderWebhookLimit() {
+		StepVerifier
+			.create(notifier.doNotify(new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofDown()),
+					instance))
+			.verifyComplete();
+
+		String json = JsonMapper.builder().build().writeValueAsString(capturePostedEntity().getBody());
+		assertThat(json.getBytes(StandardCharsets.UTF_8)).hasSizeLessThan(28 * 1024);
+	}
+
+	@Test
+	void test_customizersRunInOrder() {
+		notifier.setCardCustomizers(List.of(new AppendingCustomizer("first"), new AppendingCustomizer("second")));
+
+		notifyRegistered();
+
+		assertThat(lastTwoBodyElements(postedMessage())).containsExactly(TextBlock.of("first"), TextBlock.of("second"));
+	}
+
+	@Test
+	void test_customizerReceivesEventAndInstance() {
+		RecordingCustomizer recording = new RecordingCustomizer();
+		notifier.setCardCustomizers(List.of(recording));
+		InstanceRegisteredEvent event = new InstanceRegisteredEvent(instance.getId(), 1L, instance.getRegistration());
+
+		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
+
+		assertThat(recording.event).isSameAs(event);
+		assertThat(recording.instance).isSameAs(instance);
+	}
+
+	@Test
+	@ExtendWith(OutputCaptureExtension.class)
+	void test_throwingCustomizerIsSkipped(CapturedOutput output) {
+		notifier.setCardCustomizers(
+				List.of(new AppendingCustomizer("a"), new ThrowingCustomizer(), new AppendingCustomizer("b")));
+
+		notifyRegistered();
+
+		assertThat(lastTwoBodyElements(postedMessage())).containsExactly(TextBlock.of("a"), TextBlock.of("b"));
+		assertThat(output.getAll())
+			.containsOnlyOnce("Microsoft Teams card customizer " + ThrowingCustomizer.class.getName()
+					+ " failed, continuing without it")
+			.contains("WARN")
+			.contains("java.lang.IllegalStateException: boom");
+	}
+
+	@Test
+	@ExtendWith(OutputCaptureExtension.class)
+	void test_nullReturningCustomizerIsSkipped(CapturedOutput output) {
+		notifier.setCardCustomizers(List.of(new AppendingCustomizer("a"), new NullCustomizer()));
+
+		notifyRegistered();
+
+		List<CardElement> body = postedMessage().attachments().get(0).content().body();
+		assertThat(body.get(body.size() - 1)).isEqualTo(TextBlock.of("a"));
+		assertThat(output.getAll()).containsOnlyOnce("Microsoft Teams card customizer " + NullCustomizer.class.getName()
+				+ " returned null, continuing without it");
+	}
+
+	@Test
+	void test_customizerAppendsTable() throws Exception {
+		notifier.setCardCustomizers(List.of(issueTableCustomizer()));
+
+		StepVerifier
+			.create(notifier.doNotify(new InstanceStatusChangedEvent(instance.getId(), 1L, StatusInfo.ofDown()),
+					instance))
+			.verifyComplete();
+
+		JsonNode json = JsonMapper.builder()
+			.build()
+			.readTree(JsonMapper.builder().build().writeValueAsString(capturePostedEntity().getBody()));
+		assertThat(json.at("/attachments/0/content/version").asString()).isEqualTo("1.5");
+		JsonNode body = json.at("/attachments/0/content/body");
+		assertThat(body.get(body.size() - 1).get("type").asString()).isEqualTo("Table");
+	}
+
+	private void notifyRegistered() {
+		InstanceRegisteredEvent event = new InstanceRegisteredEvent(instance.getId(), 1L, instance.getRegistration());
+		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
+	}
+
+	private TeamsMessage postedMessage() {
+		return (TeamsMessage) capturePostedEntity().getBody();
+	}
+
+	private List<CardElement> lastTwoBodyElements(TeamsMessage message) {
+		List<CardElement> body = message.attachments().get(0).content().body();
+		return body.subList(body.size() - 2, body.size());
+	}
+
+	private static MicrosoftTeamsCardCustomizer issueTableCustomizer() {
+		return (card, event, instance) -> card.withBody(Table.builder()
+			.column(Width.weight(1))
+			.column(Width.weight(3))
+			.firstRowAsHeader(true)
+			.row(TableCell.of(TextBlock.of("Issues")), TableCell.of(TextBlock.of("Link")))
+			.row(TableCell.of(TextBlock.of(instance.getRegistration().getName())),
+					TableCell.of(TextBlock.of("https://issues.example.com/" + instance.getRegistration().getName())))
+			.build());
+	}
+
+	private void assertPostedJson(InstanceEvent event, Instance instance, String fixture) throws Exception {
+		StepVerifier.create(notifier.doNotify(event, instance)).verifyComplete();
+
+		HttpEntity<Object> entity = capturePostedEntity();
+		assertThat(entity.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
+
+		String actual = JsonMapper.builder().build().writeValueAsString(entity.getBody());
+		JSONAssert.assertEquals(readFixture(fixture), actual, JSONCompareMode.STRICT);
+	}
+
+	@SuppressWarnings("unchecked")
+	private HttpEntity<Object> capturePostedEntity() {
+		ArgumentCaptor<HttpEntity<Object>> entity = ArgumentCaptor.forClass(HttpEntity.class);
+		verify(mockRestTemplate).postForEntity(eq(URI.create("https://example.com")), entity.capture(), eq(Void.class));
+		return entity.getValue();
+	}
+
+	private String readFixture(String name) throws IOException {
+		return StreamUtils.copyToString(getClass().getResourceAsStream(name), StandardCharsets.UTF_8);
+	}
+
+	@SuppressWarnings("removal")
 	private String getActivitySubtitleFromMessage(Message message) {
 		return message.getAttachments().get(0).getContent().getBody().get(2).getText();
 	}
 
+	@SuppressWarnings("removal")
 	private String getColorFromMessage(Message message) {
 		return message.getAttachments().get(0).getContent().getBody().get(0).getColor();
 	}
 
+	@SuppressWarnings("removal")
 	private void assertMessage(Message message, String expectedTitle, String expectedSubTitle, String expectedColor) {
 		assertThat(message.getType()).isEqualTo("message");
 		assertThat(message.getAttachments()).hasSize(1);
@@ -333,6 +540,54 @@ class MicrosoftTeamsNotifierTest {
 			assertThat(fact.title()).isEqualTo("Management URL");
 			assertThat(fact.value()).isEqualTo(MANAGEMENT_URL);
 		});
+	}
+
+	static class AppendingCustomizer implements MicrosoftTeamsCardCustomizer {
+
+		private final String text;
+
+		AppendingCustomizer(String text) {
+			this.text = text;
+		}
+
+		@Override
+		public AdaptiveCard customize(AdaptiveCard card, InstanceEvent event, Instance instance) {
+			return card.withBody(TextBlock.of(this.text));
+		}
+
+	}
+
+	static class ThrowingCustomizer implements MicrosoftTeamsCardCustomizer {
+
+		@Override
+		public AdaptiveCard customize(AdaptiveCard card, InstanceEvent event, Instance instance) {
+			throw new IllegalStateException("boom");
+		}
+
+	}
+
+	static class NullCustomizer implements MicrosoftTeamsCardCustomizer {
+
+		@Override
+		public AdaptiveCard customize(AdaptiveCard card, InstanceEvent event, Instance instance) {
+			return null;
+		}
+
+	}
+
+	static class RecordingCustomizer implements MicrosoftTeamsCardCustomizer {
+
+		private InstanceEvent event;
+
+		private Instance instance;
+
+		@Override
+		public AdaptiveCard customize(AdaptiveCard card, InstanceEvent event, Instance instance) {
+			this.event = event;
+			this.instance = instance;
+			return card;
+		}
+
 	}
 
 }

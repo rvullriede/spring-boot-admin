@@ -1,0 +1,58 @@
+{
+	"attachments": [
+		{
+			"content": {
+				"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+				"body": [
+					{
+						"color": "Attention",
+						"size": "Large",
+						"text": "Status Changed",
+						"type": "TextBlock",
+						"weight": "Bolder"
+					},
+					{
+						"size": "Medium",
+						"text": "Test App",
+						"type": "TextBlock",
+						"weight": "Bolder"
+					},
+					{
+						"text": "Test App with id TestAppId changed status from UNKNOWN to DOWN",
+						"type": "TextBlock",
+						"wrap": true
+					},
+					{
+						"facts": [
+							{
+								"title": "Status",
+								"value": "UNKNOWN"
+							},
+							{
+								"title": "Service URL",
+								"value": "https://service"
+							},
+							{
+								"title": "Health URL",
+								"value": "https://health"
+							},
+							{
+								"title": "Management URL",
+								"value": "https://management"
+							},
+							{
+								"title": "Source",
+								"value": "http-api"
+							}
+						],
+						"type": "FactSet"
+					}
+				],
+				"type": "AdaptiveCard",
+				"version": "1.2"
+			},
+			"contentType": "application/vnd.microsoft.card.adaptive"
+		}
+	],
+	"type": "message"
+}

@@ -26,6 +26,7 @@ import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.core5.http.HttpHost;
 import org.reactivestreams.Publisher;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -60,6 +61,7 @@ import de.codecentric.boot.admin.server.notify.HipchatNotifier;
 import de.codecentric.boot.admin.server.notify.LetsChatNotifier;
 import de.codecentric.boot.admin.server.notify.MailNotifier;
 import de.codecentric.boot.admin.server.notify.MattermostNotifier;
+import de.codecentric.boot.admin.server.notify.MicrosoftTeamsCardCustomizer;
 import de.codecentric.boot.admin.server.notify.MicrosoftTeamsNotifier;
 import de.codecentric.boot.admin.server.notify.NotificationTrigger;
 import de.codecentric.boot.admin.server.notify.Notifier;
@@ -296,8 +298,11 @@ public class AdminServerNotifierAutoConfiguration {
 		@ConditionalOnMissingBean
 		@ConfigurationProperties("spring.boot.admin.notify.ms-teams")
 		public MicrosoftTeamsNotifier microsoftTeamsNotifier(InstanceRepository repository,
-				NotifierProxyProperties proxyProperties) {
-			return new MicrosoftTeamsNotifier(repository, createNotifierRestTemplate(proxyProperties));
+				NotifierProxyProperties proxyProperties, ObjectProvider<MicrosoftTeamsCardCustomizer> cardCustomizers) {
+			MicrosoftTeamsNotifier notifier = new MicrosoftTeamsNotifier(repository,
+					createNotifierRestTemplate(proxyProperties));
+			notifier.setCardCustomizers(cardCustomizers.orderedStream().toList());
+			return notifier;
 		}
 
 	}
